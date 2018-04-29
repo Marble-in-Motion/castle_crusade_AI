@@ -1,0 +1,23 @@
+SET IMAGE_SIZE=224
+SET ARCHITECTURE="mobilenet_1.0_%IMAGE_SIZE%"
+
+python -m scripts.retrain
+--bottleneck_dir=tf_files/bottlenecks
+--how_many_training_steps=1000
+--model_dir=tf_files/models/
+--summaries_dir=tf_files/training_summaries/"${ARCHITECTURE}"
+--output_graph=tf_files/retrained_graph.pb
+--output_labels=tf_files/retrained_labels.txt
+--architecture="%ARCHITECTURE%"
+--image_dir=tf_files/train_data_2704
+
+python scripts/label_image.py
+--graph=tf_files/retrained_graph.pb --labels=tf_files/retrained_labels.txt
+--input_layer=Placeholder
+--output_layer=final_result
+--input_height=224 --input_width=224
+--image=tf_files/test_data_resize/1/img9.jpg
+
+python -m scripts.label_image
+    --graph=tf_files/retrained_graph.pb
+    --image=tf_files/test_data_resize/1/img9.jpg
