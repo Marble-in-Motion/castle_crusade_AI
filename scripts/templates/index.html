@@ -1,0 +1,81 @@
+<html>
+  <head>
+    <title>AI Window</title>
+
+      <style>
+          h1{
+              font-size: 120px;
+          }
+          img{
+              height: auto;
+              max-width: 100%
+          }
+
+          .screenshot {
+              max-width: 19%;
+              display: inline-block;
+              border-style: solid;
+              border-width: 10px;
+
+          }
+
+          .activeNet {
+              max-width: 19%;
+              display: inline-block;
+              border-style: solid;
+              border-width: 20px;
+              border-color: red;
+          }
+
+          .logo {
+              max-width: 10%;
+              display: inline-block;
+          }
+
+          .score {
+              font-size: 52px;
+          }
+
+          .castle {
+              font-size: 256px;
+          }
+    </style>
+
+  </head>
+  <body>
+    <div align="center">
+      <div style="display: inline-block;">
+          <div class="logo" style="float: left;">
+              <img src="{{url_for('static', filename='logo.png')}}" />
+          </div>
+          <div style="display: inline-block;" align="center">
+              <h1 >Neural Net Monitor</h1>
+          </div>
+          <div class="logo" style="float: right">
+              <img src="{{url_for('static', filename='logo.png')}}" />
+          </div>
+      </div>
+
+        <p></p>
+
+        <div>
+            {% for i in range(5) %}
+                <div {% if ai_active[i] %} class="activeNet" {% else %} class="screenshot" {% endif %} >
+                    <img src="/image/{{team}}/{{ images[i] }}" />
+                    <p class="score" align="center">{{scores[i]}}</p>
+                </div>
+            {% endfor %}
+        </div>
+
+        <p class="castle">
+            CASTLE CRUSADE
+        </p>
+    </div>
+
+  </body>
+
+
+
+
+
+</html>
