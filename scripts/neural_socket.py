@@ -17,78 +17,115 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import argparse
-import socket
-
 import numpy as np
 import tensorflow as tf
 
 import glob
 import os
 
+from flask import Flask
+from flask import render_template
+from flask import send_from_directory
+from flask_restful import Resource, Api
+app = Flask(__name__)
+api = Api(app)
 
-def read_tensor_from_image_file(file_name, input_height=299, input_width=299,
-                                input_mean=0, input_std=255):
-    input_name = "file_reader"
-    file_reader = tf.read_file(file_name, input_name)
-    if file_name.endswith(".png"):
-        image_reader = tf.image.decode_png(file_reader, channels=3,
-                                           name='png_reader')
-    elif file_name.endswith(".gif"):
-        image_reader = tf.squeeze(tf.image.decode_gif(file_reader,
-                                                      name='gif_reader'))
-    elif file_name.endswith(".bmp"):
-        image_reader = tf.image.decode_bmp(file_reader, name='bmp_reader')
-    else:
-        image_reader = tf.image.decode_jpeg(file_reader, channels=3,
-                                            name='jpeg_reader')
-    float_caster = tf.cast(image_reader, tf.float32)
-    dims_expander = tf.expand_dims(float_caster, 0);
-    resized = tf.image.resize_bilinear(dims_expander, [input_height, input_width])
-    normalized = tf.divide(tf.subtract(resized, [input_mean]), [input_std])
-    sess = tf.Session()
-    result = sess.run(normalized)
+model_file = r"C:\Users\SP\Documents\WORK\GP\tensorflow\tensorflow-for-poets-2\tf_files\retrained_graph.pb"
+label_file = r"C:\Users\SP\Documents\WORK\GP\tensorflow\tensorflow-for-poets-2\tf_files\retrained_labels.txt"
+screenshot_dir = r"C:\Users\SP\Documents\WORK\GP\castle_crusade_prototype\Screenshots"
 
-    return result
+scores_team1 = [0, 0, 0, 0, 0]
+scores_team2 = [0, 0, 0, 0, 0]
 
 
-def load_labels(label_file):
-    label = []
-    proto_as_ascii_lines = tf.gfile.GFile(label_file).readlines()
-    for l in proto_as_ascii_lines:
-        label.append(l.rstrip())
-    return label
+class Inference(Resource):
+    def get(self, team=1):
+        def read_tensor_from_image_file(file_path, input_height=224, input_width=224, input_mean=128, input_std=128):
+            file_reader = tf.read_file(file_path, "file_reader")
+            if file_path.endswith(".png"):
+                image_reader = tf.image.decode_png(file_reader, channels=3, name='png_reader')
+            elif file_path.endswith(".gif"):
+                image_reader = tf.squeeze(tf.image.decode_gif(file_reader, name='gif_reader'))
+            elif file_path.endswith(".bmp"):
+                image_reader = tf.image.decode_bmp(file_reader, name='bmp_reader')
+            else:
+                image_reader = tf.image.decode_jpeg(file_reader, channels=3, name='jpeg_reader')
+
+            float_caster = tf.cast(image_reader, tf.float32)
+            dims_expander = tf.expand_dims(float_caster, 0)
+            resized = tf.image.resize_bilinear(dims_expander, [input_height, input_width])
+            normalized = tf.divide(tf.subtract(resized, [input_mean]), [input_std])
+            return tf.Session().run(normalized)
+
+        def load_labels(label_file):
+            label = []
+            proto_as_ascii_lines = tf.gfile.GFile(label_file).readlines()
+            for l in proto_as_ascii_lines:
+                label.append(l.rstrip())
+            return label
+
+        print("inference called, team: " + str(team))
+
+        output_values = []
+        for file_path in glob.glob(screenshot_dir + '\Team' + str(team) + "\*.jpg"):
+            t = read_tensor_from_image_file(file_path)
+
+            results = sess.run(output_operation.outputs[0], {input_operation.outputs[0]: t})
+            results = np.squeeze(results)
+
+            top_k = results.argsort()[-5:][::-1]
+            labels = load_labels(label_file)
+
+            total = 0
+            for i in top_k:
+                total += int(labels[i]) * results[i]
+
+            output_values.append(format(total, '.3f'))
+
+        if team == 1:
+            global scores_team1
+            scores_team1 = output_values
+        elif team == 2:
+            global scores_team2
+            scores_team2 = output_values
+
+        return ','.join(map(str, output_values))
 
 
-def inference():
-    print("inference called")
-    output_values = ""
-    for file_name in glob.glob("*.jpg"):
+class Image(Resource):
+    def get(self, team, filename):
+        path = screenshot_dir + '\Team' + str(team)
+        return send_from_directory(path, filename)
 
-        t = read_tensor_from_image_file(file_name,
-                                        input_height=input_height,
-                                        input_width=input_width,
-                                        input_mean=input_mean,
-                                        input_std=input_std)
 
-        results = sess.run(output_operation.outputs[0], {input_operation.outputs[0]: t})
-        results = np.squeeze(results)
+api.add_resource(Inference, '/inference/<int:team>')
+api.add_resource(Image, '/image/<int:team>/<path:filename>')
 
-        top_k = results.argsort()[-5:][::-1]
-        labels = load_labels(label_file)
-        total = 0
 
-        for i in top_k:
-            total += int(labels[i]) * results[i]
-            # print(labels[i], results[i])
+@app.route("/<int:team>", methods=['GET'])
+def index(team=1):
+    def calculate_active(team_scores):
+        sorted = team_scores[:]
+        sorted.sort(reverse=True)
+        threshold = sorted[1]
 
-        output_values += str(total) + ", "
-    return output_values
+        active = []
+        for i, v in enumerate(team_scores):
+            active.append(v >= threshold)
+        return active
+
+    if team == 1:
+        scores = scores_team1
+    elif team == 2:
+        scores = scores_team2
+
+    ai_active = calculate_active(scores)
+    images = os.listdir(screenshot_dir + '\Team' + str(team))
+    return render_template('index.html', team=team, images=images, scores=scores, ai_active=ai_active)
 
 
 if __name__ == "__main__":
-
-    def load_graph(model_file):
+    def load_graph():
         graph = tf.Graph()
         graph_def = tf.GraphDef()
 
@@ -99,45 +136,13 @@ if __name__ == "__main__":
 
         return graph
 
-
-    model_file = r"C:\Users\SP\Documents\WORK\GP\tensorflow\tensorflow-for-poets-2\tf_files\retrained_graph.pb"
-    label_file = r"C:\Users\SP\Documents\WORK\GP\tensorflow\tensorflow-for-poets-2\tf_files\retrained_labels.txt"
-    input_height = 224
-    input_width = 224
-    input_mean = 128
-    input_std = 128
-    input_layer = "input"
-    output_layer = "final_result"
-
-    graph = load_graph(model_file)
-
-    input_name = "import/" + input_layer
-    output_name = "import/" + output_layer
-    input_operation = graph.get_operation_by_name(input_name)
-    output_operation = graph.get_operation_by_name(output_name)
-
+    print("initialise")
+    graph = load_graph()
+    input_operation = graph.get_operation_by_name("import/input")
+    output_operation = graph.get_operation_by_name("import/final_result")
     sess = tf.Session(graph=graph)
+    print("done")
 
-    HOST = 'localhost'  # Symbolic name meaning the local host
-    PORT = 9999  # Arbitrary non-privileged port
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind((HOST, PORT))
+    # set-up website
+    app.run(host='127.0.0.1', port=5000, debug=True, use_reloader=False, threaded=True)
 
-    s.listen(1)
-    print("Listening... HOST: " + str(HOST) + " PORT:" + str(PORT))
-    print(s.getsockname())
-    conn, addr = s.accept()
-    print("Connected by" + str(addr))
-
-    activate = "dead"
-    while 1:
-        activate = conn.recv(1024).decode("utf-8")
-
-        if activate == "run1":
-            os.chdir(r'C:\Users\SP\Documents\WORK\GP\castle_crusade_prototype\Screenshots\Team1')
-            output = inference()
-            print(output)
-            conn.send(output.encode("utf-8"))
-            activate = "dead"
-
-    conn.close()
